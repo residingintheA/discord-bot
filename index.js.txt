@@ -1,0 +1,75 @@
+import { Client, GatewayIntentBits, ChannelType } from "discord.js";
+
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildVoiceStates,
+    GatewayIntentBits.GuildPresences,
+    GatewayIntentBits.GuildMembers
+  ]
+});
+
+const VANITY_TEXT = "/myserver";
+const ROLE_NAME = "Vanity";
+
+let tempChannels = new Map();
+
+client.once("ready", () => {
+  console.log(`Logged in as ${client.user.tag}`);
+});
+
+// VC command
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+
+  if (interaction.commandName === "vc") {
+    const channel = await interaction.guild.channels.create({
+      name: `${interaction.user.username}'s VC`,
+      type: ChannelType.GuildVoice,
+    });
+
+    if (interaction.member.voice.channel) {
+      await interaction.member.voice.setChannel(channel);
+    }
+
+    tempChannels.set(channel.id, interaction.user.id);
+
+    await interaction.reply({ content: "VC created!", ephemeral: true });
+  }
+});
+
+// delete empty VCs
+client.on("voiceStateUpdate", (oldState) => {
+  const channel = oldState.channel;
+  if (!channel) return;
+
+  if (tempChannels.has(channel.id) && channel.members.size === 0) {
+    channel.delete().catch(() => {});
+    tempChannels.delete(channel.id);
+  }
+});
+
+// vanity role
+client.on("presenceUpdate", async (_, newPresence) => {
+  if (!newPresence) return;
+
+  const member = newPresence.member;
+  if (!member) return;
+
+  const role = member.guild.roles.cache.find(r => r.name === ROLE_NAME);
+  if (!role) return;
+
+  const status = newPresence.activities.find(a => a.type === 4);
+
+  if (status?.state?.includes(VANITY_TEXT)) {
+    if (!member.roles.cache.has(role.id)) {
+      await member.roles.add(role).catch(() => {});
+    }
+  } else {
+    if (member.roles.cache.has(role.id)) {
+      await member.roles.remove(role).catch(() => {});
+    }
+  }
+});
+
+client.login(process.env.TOKEN);
